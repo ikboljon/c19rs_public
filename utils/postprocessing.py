@@ -2,6 +2,16 @@ from skimage.measure import label
 import numpy as np
 import SimpleITK as sitk
 
+def fill_void_in_axial(mask):
+
+    mask_copy = mask
+    filled_mask = np.zeros_like(mask_copy)
+    for z in range(mask_copy.shape[0]):
+        filled_mask[z,:,:] = ndimage.binary_fill_holes(mask_copy[z,:,:])
+
+    # Replace the original mask with the filled mask
+    mask = filled_mask.astype(np.int16)
+    return mask
 
 def remove_if_more_than_one_area_exists(mask):
     """
@@ -31,7 +41,7 @@ def remove_if_more_than_one_area_exists(mask):
     return mask
 
 
-def fix_aorta_top_bottom_slices(mask):
+def fix_aorta_top_bottom_slices(mask, organ_length=68, num_slices=3):
     """
     Only for the aorta project. It crops the top 3 and bottom 3 slices
       where the aorta is found and replaces them with the one slice prior 
@@ -49,13 +59,21 @@ def fix_aorta_top_bottom_slices(mask):
 
     # copy the seg mask sitk and apply cast filter to convert it to uint16
     np_arr_copy = np_arr_view
-    np_arr_copy[x_max,:,:] = np_arr_view[x_max-3,:,:]
-    np_arr_copy[x_max-1,:,:] = np_arr_view[x_max-3,:,:]
-    np_arr_copy[x_max-2,:,:] = np_arr_view[x_max-3,:,:]
+    for i in range(num_slices):
+        np_arr_copy[x_max-i,:,:] = np_arr_view[x_max-num_slices,:,:]
+        np_arr_copy[x_min+i,:,:] = np_arr_view[x_min+num_slices,:,:]
 
-    np_arr_copy[x_min,:,:] = np_arr_view[x_min+3,:,:]
-    np_arr_copy[x_min+1,:,:] = np_arr_view[x_min+3,:,:]
-    np_arr_copy[x_min+2,:,:] = np_arr_view[x_min+3,:,:]
+    # np_arr_copy[x_max,:,:] = np_arr_view[x_max-5,:,:]
+    # np_arr_copy[x_max-1,:,:] = np_arr_view[x_max-5,:,:]
+    # np_arr_copy[x_max-2,:,:] = np_arr_view[x_max-5,:,:]
+    # np_arr_copy[x_max-3,:,:] = np_arr_view[x_max-5,:,:]
+    # np_arr_copy[x_max-4,:,:] = np_arr_view[x_max-5,:,:]
+
+    # np_arr_copy[x_min,:,:] = np_arr_view[x_min+5,:,:]
+    # np_arr_copy[x_min+1,:,:] = np_arr_view[x_min+5,:,:]
+    # np_arr_copy[x_min+2,:,:] = np_arr_view[x_min+5,:,:]
+    # np_arr_copy[x_min+3,:,:] = np_arr_view[x_min+5,:,:]
+    # np_arr_copy[x_min+4,:,:] = np_arr_view[x_min+5,:,:]
 
     # check if total length is more than 68mm, then remove the top/bottom slices
     mask_where = np.where(np_arr_copy>0)
@@ -63,15 +81,53 @@ def fix_aorta_top_bottom_slices(mask):
     x_min = np.min(mask_where[0])
 
     diff = x_max - x_min
-    print("Total length of fixed aorta", diff, 'with max and min x values:', x_max, x_min)
+    
 
-    if diff > 68:
+    if diff > organ_length:
         # take the 68mm down from the maximum, and zero out anything above max and below min values
-        new_x_min = x_max - 68
-        print("New max min x values:", x_max, new_x_min)
+        new_x_min = x_max - organ_length
+        # print("New max min x values:", x_max, new_x_min)
         np_arr_copy[:new_x_min,:,:] = 0
         np_arr_copy[x_max:,:,:] = 0
 
+        mask_where = np.where(np_arr_copy>0)
+        x_max = np.max(mask_where[0])
+        x_min = np.min(mask_where[0])
+        diff = x_max - x_min
+        print("The max_min difference was larger than", organ_length,"\n",
+               "Total length is", diff, 'with max and min x values:', x_max, x_min)
+    
+    elif diff < organ_length:
+        # keep adding slices to top and bottom to make it 68mm
+        to_add = (organ_length - diff) / 2
+        for i in range(int(to_add)):
+            if x_max+i < np_arr_copy.shape[0]:
+                np_arr_copy[x_max+i,:,:] = np_arr_copy[x_max,:,:]
+            if x_min-i > 0:
+                np_arr_copy[x_min-i,:,:] = np_arr_copy[x_min,:,:]
+        print("The max_min difference was smaller than", organ_length)
+                
+    mask_where = np.where(np_arr_copy>0)
+    x_max = np.max(mask_where[0])
+    x_min = np.min(mask_where[0])
+    diff = x_max - x_min
+    
+    # print("Total length is", diff, 'with max and min x values:', x_max, x_min)      
+          
+    if diff < organ_length:
+        to_add = (organ_length - diff) + 1
+
+        for i in range(int(to_add)):
+            np_arr_copy[x_min-i,:,:] = np_arr_copy[x_min,:,:]
+
+        print("The max reached the final slice. The max_min difference is still smaller than", organ_length)
+    
+    mask_where = np.where(np_arr_copy>0)
+    x_max = np.max(mask_where[0])
+    x_min = np.min(mask_where[0])
+    diff = x_max - x_min
+    
+    print("The final length is", diff, 'with max and min x values:', x_max, x_min)
 
     return np_arr_copy
 
