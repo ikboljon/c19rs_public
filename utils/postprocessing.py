@@ -203,3 +203,28 @@ def apply_spherical_extension_to_mask(path_to_mask, radius=3, pv=False, path_to_
 
 
     return spherical_loop
+
+def apply_spherical_contraction_to_mask(path_to_mask, radius=3):
+    '''
+    This function takes in a mask and applies erosion within the given radius
+    to shrink the mask and produce a new mask with reduced surrounding space.
+    
+    Inputs:
+        path_to_mask: Path to the mask file (e.g., binary segmentation mask)
+        radius: Radius of the spherical kernel for erosion (i.e., voxels to contract in each direction)
+    Output:
+        contracted_mask_arr: Array of the mask with space around it removed
+    '''
+
+    seg_image = sitk.ReadImage(path_to_mask)
+
+    # Apply erosion to the segmentation mask
+    erosion_filter = sitk.BinaryErodeImageFilter()
+    erosion_filter.SetKernelRadius(radius)
+    erosion_filter.SetKernelType(sitk.sitkBall)
+    eroded_image = erosion_filter.Execute(seg_image)
+
+    # Convert the eroded SimpleITK image to a NumPy array for further processing or analysis
+    contracted_mask_arr = sitk.GetArrayFromImage(eroded_image)
+
+    return contracted_mask_arr
